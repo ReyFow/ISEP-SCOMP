@@ -1,0 +1,120 @@
+1) Padrões usados: Sincronização entre processos (por ocorrência de eventos).
+
+2)
+BEGIN
+    DEFINE OUTPUT_FILE as "Output.txt"
+    DEFINE NUMBERS_FILE as "Numbers.txt"
+    DEFINE NUMBER_OF_CHILDREN as 8
+
+    DEFINE main(void):
+        DEFINE status, num, i
+        DEFINE pidList[NUMBER_OF_CHILDREN]
+        DEFINE sem[NUMBER_OF_CHILDREN]
+        DEFINE semName[50]
+
+        IF REMOVE OUTPUT_FILE == 0:
+            PRINT "O conteudo do ficheiro " + OUTPUT_FILE + " foi apagado com sucesso"
+        ELSE:
+            PRINT "Erro ao apagar ficheiro Output.txt"
+            EXIT -1
+        END
+
+        DEFINE outputFile = fopen(OUTPUT_FILE, "w")
+
+        IF outputFile == NULL:
+            PRINT "Erro ao criar ficheiro Output.txt"
+            EXIT -1
+        END
+
+        fclose(outputFile)
+
+        FOR i = 0 TO NUMBER_OF_CHILDREN:
+            snprintf(semName, sizeof(semName), "numbersSema%d", i)
+            sem[i] = sem_open(semName, O_CREAT | O_EXCL, 0644, 0)
+
+            IF sem[i] == SEM_FAILED:
+                PRINT "Erro no criar/abrir semaforo"
+                EXIT -1
+            END
+
+        END
+
+        FOR i = 0 TO NUMBER_OF_CHILDREN:
+            pidList[i] = fork()
+
+            IF pidList[i] < 0:
+                DEFINE "Erro ao criar o processo"
+                EXIT -1
+            ELSE IF pidList[i] == 0:
+                DEFINE j, randomNum, opt = i + 1
+                srand((unsigned)time(&t) * getpid())
+                randomNum = (rand() % 5) + 1
+                WAIT sem[i]
+                DEFINE numFile
+                numFile = fopen(NUMBERS_FILE, "r")
+
+                IF numFile == NULL:
+                    PRINT "Erro ao procurar ficheiro"
+                    EXIT -1
+                END
+
+                FOR j = 0 TO opt:
+                    fscanf(numFile, "%d", &num)
+                END
+
+                fclose(numFile)
+                SIGNAL sem[i]
+                SLEEP randomNum
+                WAIT sem[i + 1]
+                outputFile = fopen(OUTPUT_FILE, "a")
+
+                IF outputFile == NULL:
+                    PRINT "Erro ao abrir ficheiro Output.txt"
+                    EXIT -1
+                END
+
+                fprintf(outputFile, "[%d]%d\n", getpid(), num)
+                fclose(outputFile)
+                SIGNAL sem[i + 1]
+                EXIT 0
+            END
+
+        END
+
+        SIGNAL sem[0]
+
+        FOR i = 0 TO NUMBER_OF_CHILDREN:
+            waitpid(pidList[i], &status, 0)
+        END
+
+        outputFile = fopen(OUTPUT_FILE, "a")
+
+        IF outputFile == NULL:
+            PRINT "Erro ao abrir ficheiro Output.txt"
+            EXIT -1
+        END
+
+        WHILE fscanf(outputFile, "%d", &num) != EOF:
+            PRINT "Número lido do ficheiro Output.txt:" + num
+        END
+
+        fclose(outputFile)
+
+        FOR i = 0 TO NUMBER_OF_CHILDREN:
+            IF sem_close(sem[i]) < 0:
+                PRINT "Erro ao fechar semaforo"
+                EXIT -1
+            END
+
+            snprintf(semName, sizeof(semName), "numbersSema%d", i)
+
+            IF sem_unlink(semName) < 0:
+                PRINT "Erro ao fechar semaforo"
+                EXIT -1
+            END
+
+        END
+
+        RETURN 0
+    END
+END
